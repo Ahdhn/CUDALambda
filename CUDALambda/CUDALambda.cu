@@ -6,6 +6,17 @@
 
 #include "helper.h"
 
+/**
+ * Plain device kernel
+ */
+__global__ void plain_kernel(const int size, int* x)
+{
+    const int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (idx < size) {
+        int my_x = x[idx];
+        x[idx] = my_x * my_x;
+    }
+}
 
 /**
  * kernel caller for the lambda function
@@ -87,7 +98,7 @@ float test_lambda(const int size,
     timer.stop();
 
     if (verify(d_x, size, val * val)) {
-        //printf("\nLambda test passed\n");
+        // printf("\nLambda test passed\n");
     } else {
         printf("\nLambda test FAILED!!!!\n");
     }
@@ -122,7 +133,7 @@ float test_functor(const int size,
     timer.stop();
 
     if (verify(d_x, size, val * val)) {
-       // printf("\nFunctor test passed\n");
+        // printf("\nFunctor test passed\n");
     } else {
         printf("\nFunctor test FAILED!!!!\n");
     }
@@ -134,11 +145,39 @@ float test_functor(const int size,
     return timer.elapsed_millis();
 }
 
+float test_plain_kernel(const int size,
+                        const int val,
+                        const int num_threads,
+                        const int num_blocks)
+{
+    const int        bytes = size * sizeof(int);
+    std::vector<int> h_x(size, val);
+    int*             d_x(nullptr);
 
+    CUDA_ERROR(cudaMalloc((void**)&d_x, bytes));
+    CUDA_ERROR(cudaMemcpy(d_x, h_x.data(), bytes, cudaMemcpyHostToDevice));
+
+    CUDATimer timer;
+    timer.start();
+
+    plain_kernel<<<num_blocks, num_threads>>>(size, d_x);
+    CUDA_ERROR(cudaDeviceSynchronize());
+
+    timer.stop();
+
+    if (verify(d_x, size, val * val)) {
+        // printf("\nPlain kernel test passed\n");
+    } else {
+        printf("\nPlain kernel FAILED!!!!\n");
+    }
+    CUDA_ERROR(cudaFree(d_x));
+
+    return timer.elapsed_millis();
+}
 int main(int argc, char** argv)
 {
-    const int num_run = 10;
-    const int size = 1024*1024*10;
+    const int num_run = 20;
+    const int size = 1024 * 1024 * 10;
     const int val = 10;
     const int num_threads = 512;
     const int num_blocks = DIVIDE_UP(size, num_threads);
@@ -153,14 +192,22 @@ int main(int argc, char** argv)
         printf("\n average test_functor time = %f", functor_time / num_run);
     }
 
-     {
+    {
         float lambda_time = 0;
         for (int i = 0; i < num_run; ++i) {
             lambda_time += test_lambda(size, val, num_threads, num_blocks);
         }
         printf("\n average test_lambda time = %f", lambda_time / num_run);
     }
-   
+
+    {
+        float plain_time = 0;
+        for (int i = 0; i < num_run; ++i) {
+            plain_time += test_plain_kernel(size, val, num_threads, num_blocks);
+        }
+        printf("\n average test_plain_kernel time = %f\n", plain_time / num_run);
+    }
+
 
     return EXIT_SUCCESS;
 }
